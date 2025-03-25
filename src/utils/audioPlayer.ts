@@ -67,8 +67,22 @@ export function playAudioFromUrl(url: string): Promise<void> {
  * @returns The URL of the audio
  */
 export function createAudioUrl(audioData: ArrayBuffer): string {
-  const blob = new Blob([audioData], { type: 'audio/mpeg' });
-  return URL.createObjectURL(blob);
+  console.log('Creating audio URL from ArrayBuffer of size:', audioData.byteLength);
+  try {
+    const blob = new Blob([audioData], { type: 'audio/mpeg' });
+    const url = URL.createObjectURL(blob);
+    console.log('Successfully created audio URL:', url);
+    
+    // Test load the audio to ensure it's valid (helps with debugging)
+    const audio = new Audio();
+    audio.src = url;
+    audio.load();
+    
+    return url;
+  } catch (error) {
+    console.error('Error creating audio URL:', error);
+    throw error;
+  }
 }
 
 /**

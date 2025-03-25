@@ -2,7 +2,6 @@
 
 A modern web application that allows storytellers, voice-over artists, and content creators to write scripts with detailed voice instructions, generate AI voice audio, and export high-quality audio files.
 
-![Story App](https://your-screenshot-url-here.png)
 
 ## Features
 
@@ -27,7 +26,7 @@ A modern web application that allows storytellers, voice-over artists, and conte
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/story-app.git
+   git clone https://github.com/sumitchatterjee13/VocalCanvas.git
    cd story-app
    ```
 

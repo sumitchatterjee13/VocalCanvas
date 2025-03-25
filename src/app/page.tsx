@@ -11,11 +11,17 @@ import StoryManager from '@/components/StoryManager';
 import AutopilotToggle from '@/components/AutopilotToggle';
 import AutopilotPopup from '@/components/AutopilotPopup';
 import ScriptFormatterPopup from '@/components/ScriptFormatterPopup';
-import PlayAllPopup from '@/components/PlayAllPopup';
 import { Character, ScriptLine, StoryScript } from '@/models/types';
 import { createAudioUrl, playAudioFromUrl, downloadCombinedAudio, downloadSingleAudioFile, stringToUrlSafeId } from '@/utils/audioPlayer';
 import { saveStory, createNewStory, loadStory } from '@/utils/storyDatabase';
 import { ArrowDownTrayIcon, DocumentDuplicateIcon, DocumentArrowDownIcon, PlusIcon } from '@heroicons/react/24/solid';
+
+// Add a custom type declaration for window to support the currentObserver property
+declare global {
+  interface Window {
+    currentObserver: MutationObserver | null;
+  }
+}
 
 export default function Home() {
   const { theme } = useTheme();
@@ -35,7 +41,6 @@ export default function Home() {
   const [audioElements, setAudioElements] = useState<Map<number, HTMLAudioElement>>(new Map());
   const [isGeneratingAll, setIsGeneratingAll] = useState<boolean>(false);
   const [currentAudio, setCurrentAudio] = useState<HTMLAudioElement | null>(null);
-  const [showPlayAllPopup, setShowPlayAllPopup] = useState<boolean>(false);
   const [isPlayingAll, setIsPlayingAll] = useState<boolean>(false);
   const [currentPlayingLine, setCurrentPlayingLine] = useState<number | null>(null);
 
@@ -267,17 +272,23 @@ export default function Home() {
           
           // Set up event listeners first before setting source
           audio.addEventListener('ended', () => {
-            setPlayingIndex(null);
-            setAudioElements(prev => {
-              const newMap = new Map(prev);
-              newMap.delete(index);
-              return newMap;
-            });
+            console.log(`Audio for line ${index} ended naturally`);
+            
+            // If we're in Play All mode, don't reset the playingIndex yet
+            // The setupLineCompletionHandler will handle advancing to the next line
+            if (!isPlayingAll) {
+              setPlayingIndex(null);
+              setAudioElements(prev => {
+                const newMap = new Map(prev);
+                newMap.delete(index);
+                return newMap;
+              });
+            }
             setCurrentAudio(null);
           });
           
           audio.addEventListener('error', () => {
-            console.error('Error playing audio');
+            console.error(`Error playing audio for line ${index}`);
             setPlayingIndex(null);
             setAudioElements(prev => {
               const newMap = new Map(prev);
@@ -285,6 +296,15 @@ export default function Home() {
               return newMap;
             });
             setCurrentAudio(null);
+            
+            // If in play all mode, try to move to the next line
+            if (isPlayingAll && index < script.length - 1) {
+              console.log('Moving to next line due to error');
+              setTimeout(() => {
+                setCurrentPlayingLine(index + 1);
+                handlePlayLine(index + 1);
+              }, 500);
+            }
           });
           
           // Store the audio element reference
@@ -314,6 +334,15 @@ export default function Home() {
               console.error('Error playing audio:', error);
               setPlayingIndex(null);
               setCurrentAudio(null);
+              
+              // If in play all mode, try to move to the next line
+              if (isPlayingAll && index < script.length - 1) {
+                console.log('Moving to next line due to error');
+                setTimeout(() => {
+                  setCurrentPlayingLine(index + 1);
+                  handlePlayLine(index + 1);
+                }, 500);
+              }
             });
             // Remove the event listener to prevent memory leaks
             audio.removeEventListener('canplaythrough', onCanPlay);
@@ -390,6 +419,42 @@ export default function Home() {
     }
   };
 
+  // Function to completely reset audio state
+  const resetAudioState = () => {
+    console.log('Completely resetting audio state');
+    
+    // Clear current playing state
+    setIsPlayingAll(false);
+    setPlayingIndex(null);
+    setCurrentPlayingLine(null);
+    
+    // Stop and clear all audio elements
+    if (currentAudio) {
+      console.log('Stopping current audio');
+      currentAudio.pause();
+      currentAudio.src = '';
+      currentAudio.load();
+      setCurrentAudio(null);
+    }
+    
+    // Clean up all audio elements
+    console.log('Cleaning up all audio elements');
+    audioElements.forEach((audio) => {
+      audio.pause();
+      audio.src = '';
+      audio.load();
+    });
+    setAudioElements(new Map());
+    
+    // Give the browser a moment to clean up
+    return new Promise<void>((resolve) => {
+      setTimeout(() => {
+        console.log('Audio state reset complete');
+        resolve();
+      }, 100);
+    });
+  };
+
   // Function to play the entire script
   const playEntireScript = async () => {
     console.log('Play entire script called');
@@ -400,8 +465,8 @@ export default function Home() {
     }
     
     // If already playing, just toggle pause/play
-    if (showPlayAllPopup) {
-      console.log('Play all popup already showing, toggling play/pause');
+    if (isPlayingAll) {
+      console.log('Already playing all, toggling play/pause');
       togglePlayAll();
       return;
     }
@@ -432,46 +497,24 @@ export default function Home() {
     
     console.log('All audio is generated, proceeding with playback');
     
-    // Stop any currently playing audio
-    console.log('Stopping any currently playing audio');
-    stopAllAudio();
-    
     try {
-      // Ensure clean state
-      console.log('Resetting playback state');
-      setCurrentPlayingLine(null);
-      setCurrentAudio(null);
-      setAudioElements(new Map());
+      // First completely reset audio state
+      await resetAudioState();
       
-      // First set up the UI state
-      console.log('Setting up play all state - showing popup');
-      setShowPlayAllPopup(true);
-      
-      // Use a two-phase approach with callbacks to ensure state is updated
-      // First phase: show the popup
-      console.log('First phase: waiting for popup to be visible');
+      // Set up for playback
+      console.log('Setting up play all state');
+      setIsPlayingAll(true);
+      setCurrentPlayingLine(0);
+
+      // Use setTimeout to ensure state updates are complete
       setTimeout(() => {
-        // Second phase: set playing state and start playback
-        console.log('Second phase: setting playing state');
-        setIsPlayingAll(true);
-        setCurrentPlayingLine(0);
+        // Start playing the first line - this leverages the existing handlePlayLine function
+        console.log('Starting playback of first line');
+        handlePlayLine(0);
         
-        // Final phase: initiate playback
-        setTimeout(() => {
-          console.log('Final phase: initiating playback, state check:');
-          console.log('- isPlayingAll:', isPlayingAll);
-          console.log('- showPlayAllPopup:', showPlayAllPopup);
-          console.log('- currentPlayingLine:', currentPlayingLine);
-          
-          if (showPlayAllPopup) {
-            // Even if the state hasn't propagated yet, we can force playback
-            console.log('Starting playback sequence');
-            playNextLine(0);
-          } else {
-            console.error('Popup disappeared before playback could start');
-          }
-        }, 300); // Short delay for playing
-      }, 200); // Short delay for state update
+        // Set up listener for audio completion to chain to next line
+        setupLineCompletionHandler();
+      }, 200);
     } catch (error) {
       console.error('Error playing entire script:', error);
       alert('Failed to play the entire script. Please try again.');
@@ -479,206 +522,116 @@ export default function Home() {
     }
   };
 
-  // Function to play the next line in the sequence
-  const playNextLine = async (lineIndex: number) => {
-    console.log('Playing next line:', lineIndex, 'isPlayingAll:', isPlayingAll, 'showPlayAllPopup:', showPlayAllPopup);
+  // Function to set up an event listener for audio completion
+  const setupLineCompletionHandler = () => {
+    console.log('Setting up line completion handler for Play All mode');
     
-    // If we're not playing all or popup is closed, stop playing
-    if (!isPlayingAll || !showPlayAllPopup) {
-      console.log('Not in play all mode, returning');
-      return;
-    }
-    
-    // If we've reached the end, stop playing
-    if (lineIndex >= script.length) {
-      console.log('Reached end of script, stopping');
-      stopPlayAll();
-      return;
-    }
-    
-    setCurrentPlayingLine(lineIndex);
-    
-    // Make sure we have valid line data
-    if (!script[lineIndex]) {
-      console.error('Invalid line index:', lineIndex, 'script length:', script.length);
-      stopPlayAll();
-      return;
-    }
-    
-    const line = script[lineIndex];
-    console.log('Line data:', line.characterName, line.text.substring(0, 30) + '...');
-    const cacheKey = `${line.characterName}_${line.text}_${line.instructions || ''}`;
-    
-    console.log('Checking cache for key:', cacheKey.substring(0, 50) + '...');
-    console.log('Cache has key:', audioCache.has(cacheKey));
-    
-    if (!audioCache.has(cacheKey)) {
-      console.warn(`No audio found for line ${lineIndex}, skipping`);
-      // Wait a bit before moving to next line
-      setTimeout(() => playNextLine(lineIndex + 1), 500);
-      return;
-    }
-    
-    const audioUrl = audioCache.get(cacheKey);
-    if (!audioUrl) {
-      console.warn('Audio URL is empty, skipping');
-      // Wait a bit before moving to next line
-      setTimeout(() => playNextLine(lineIndex + 1), 500);
-      return;
-    }
-    
-    console.log('Audio URL found:', audioUrl.substring(0, 50) + '...');
-    
-    try {
-      // Stop any currently playing audio
-      if (currentAudio) {
-        console.log('Stopping current audio');
-        currentAudio.pause();
-        currentAudio.currentTime = 0;
-        // Remove any existing event listeners to prevent memory leaks
-        currentAudio.onended = null;
-        currentAudio.oncanplaythrough = null;
-        currentAudio.onerror = null;
-      }
+    // Create event listener for the current audio
+    const handleAudioEnded = () => {
+      console.log('Audio for line ended, playing next line');
       
-      console.log('Creating new audio for line:', lineIndex);
-      // Create a new audio element for this line
-      const audio = new Audio();
-      
-      // Store the audio element immediately to ensure it persists
-      setAudioElements(prev => {
-        const newMap = new Map(prev);
-        // Clear any previous audio elements to avoid memory leaks
-        prev.forEach((_, key) => {
-          if (key !== lineIndex) {
-            newMap.delete(key);
-          }
-        });
-        newMap.set(lineIndex, audio);
-        return newMap;
-      });
-      
-      setCurrentAudio(audio);
-      
-      // Set event listeners before setting source
-      audio.oncanplaythrough = () => {
-        console.log('Audio canplaythrough event fired for line:', lineIndex);
+      // When current line finishes, play the next one
+      if (playingIndex !== null && playingIndex < script.length - 1) {
+        const nextLine = playingIndex + 1;
+        console.log(`Line ${playingIndex} complete. Playing next line: ${nextLine}`);
         
-        // Double check state to make sure we're still in play all mode
-        if (isPlayingAll && showPlayAllPopup) {
-          console.log('Starting playback for line:', lineIndex);
-          
-          // Try to play and handle any errors
-          try {
-            const playPromise = audio.play();
-            if (playPromise !== undefined) {
-              playPromise
-                .then(() => console.log('Playback started successfully'))
-                .catch(err => {
-                  console.error('Error playing audio:', err);
-                  // Try again with user interaction trick
-                  document.addEventListener('click', function playOnClick() {
-                    audio.play();
-                    document.removeEventListener('click', playOnClick);
-                  }, { once: true });
-                  // Move to next line if there's an error
-                  setTimeout(() => playNextLine(lineIndex + 1), 500);
-                });
-            }
-          } catch (e) {
-            console.error('Exception playing audio:', e);
-            // Move to next line if there's an error
-            setTimeout(() => playNextLine(lineIndex + 1), 500);
+        // Update UI immediately
+        setCurrentPlayingLine(nextLine);
+        
+        // Use small delay to ensure clean transition
+        setTimeout(() => {
+          if (isPlayingAll) {
+            console.log(`Starting playback of line ${nextLine}`);
+            handlePlayLine(nextLine);
+          } else {
+            console.log('Play All mode deactivated during transition, stopping playback');
           }
-        } else {
-          console.log('No longer in play all mode, not starting playback');
-        }
-      };
-      
-      audio.onended = () => {
-        console.log('Audio ended for line:', lineIndex);
-        // Small delay before playing next line
-        setTimeout(() => playNextLine(lineIndex + 1), 500);
-      };
-      
-      audio.onloadeddata = () => {
-        console.log('Audio loaded data event for line:', lineIndex);
-      };
-      
-      audio.onerror = (e) => {
-        console.error('Error with audio playback for line:', lineIndex, e);
-        console.error('Audio error code:', audio.error ? audio.error.code : 'unknown');
-        // Move to next line if there's an error
-        setTimeout(() => playNextLine(lineIndex + 1), 500);
-      };
-      
-      // Set the source
-      console.log('Setting audio source for line:', lineIndex);
-      audio.src = audioUrl;
-      audio.preload = 'auto';
-      
-      // Explicitly attempt to start loading
-      console.log('Loading audio for line:', lineIndex);
-      audio.load();
-      
-      // Force play after a short delay in case canplaythrough doesn't fire
-      setTimeout(() => {
-        if (audio.paused && isPlayingAll && showPlayAllPopup) {
-          console.log('Force playing audio after timeout for line:', lineIndex);
-          try {
-            audio.play()
-              .then(() => console.log('Forced play successful for line:', lineIndex))
-              .catch(err => {
-                console.error('Error during forced play for line:', lineIndex, err);
-                // Move to next line if there's an error
-                setTimeout(() => playNextLine(lineIndex + 1), 300);
-              });
-          } catch (e) {
-            console.error('Exception during forced play:', e);
-            setTimeout(() => playNextLine(lineIndex + 1), 300);
-          }
-        }
-      }, 1000); // Shorter timeout - 1 second
-      
-    } catch (error) {
-      console.error('Error setting up audio:', error);
-      // Try to continue with next line
-      setTimeout(() => playNextLine(lineIndex + 1), 500);
-    }
-  };
+        }, 300);
+      } else {
+        console.log('Reached end of script or no line playing, stopping Play All');
+        stopPlayAll();
+      }
+    };
 
-  // Function to stop play all
-  const stopPlayAll = () => {
-    console.log('Stopping play all');
-    setIsPlayingAll(false);
-    setCurrentPlayingLine(null);
-    
-    // Stop any playing audio
+    // When we create a new audio element in handlePlayLine, it already has an 'ended' event
+    // We need to override any current audio's ended handler to chain to the next line
     if (currentAudio) {
-      console.log('Stopping current audio during stopPlayAll');
-      currentAudio.pause();
-      currentAudio.currentTime = 0;
-      // Remove event listeners
+      // Remove any existing ended handler
       currentAudio.onended = null;
-      currentAudio.oncanplaythrough = null;
-      currentAudio.onerror = null;
-      setCurrentAudio(null);
+      
+      // Add our chaining handler
+      currentAudio.addEventListener('ended', handleAudioEnded);
+      
+      console.log('Set up audio ended handler for chaining playback on current audio');
+    } else {
+      console.log('No current audio to attach ended handler to - will attempt to catch future audio elements');
     }
     
-    // Clear all audio elements
-    console.log('Clearing all audio elements');
-    Array.from(audioElements.values()).forEach(audio => {
-      audio.pause();
-      audio.currentTime = 0;
-      // Remove event listeners
-      audio.onended = null;
-      audio.oncanplaythrough = null;
-      audio.onerror = null;
+    // Also set up a mutation observer to catch new audio elements
+    const observer = new MutationObserver((mutations) => {
+      mutations.forEach((mutation) => {
+        if (mutation.type === 'childList') {
+          // Check if any new audio elements were added
+          const newAudios = document.querySelectorAll('audio');
+          newAudios.forEach(audio => {
+            if (audio && !audio.onended) {
+              audio.addEventListener('ended', handleAudioEnded);
+              console.log('Added ended handler to newly created audio element');
+            }
+          });
+        }
+      });
     });
-    setAudioElements(new Map());
+    
+    // Start observing
+    observer.observe(document.body, { childList: true, subtree: true });
+    console.log('Started mutation observer for new audio elements');
+    
+    // Store the observer to disconnect later
+    window.currentObserver = observer;
+    
+    // Return a cleanup function
+    return () => {
+      observer.disconnect();
+      if (window.currentObserver) {
+        window.currentObserver.disconnect();
+        window.currentObserver = null;
+      }
+      console.log('Cleaned up mutation observer');
+    };
   };
 
-  // Function to toggle pause/play during play all
+  // Add event listener for audio element to catch ended events for chaining
+  useEffect(() => {
+    // Set up listener for current audio
+    if (currentAudio && isPlayingAll) {
+      const handleAudioEnded = () => {
+        console.log('Audio ended event captured in effect');
+        if (playingIndex !== null && playingIndex < script.length - 1) {
+          const nextLine = playingIndex + 1;
+          setCurrentPlayingLine(nextLine);
+          
+          // Use timeout to ensure clean transition
+          setTimeout(() => {
+            if (isPlayingAll) {
+              handlePlayLine(nextLine);
+            }
+          }, 300);
+        } else {
+          stopPlayAll();
+        }
+      };
+      
+      console.log('Adding ended listener to current audio in effect');
+      currentAudio.addEventListener('ended', handleAudioEnded);
+      
+      return () => {
+        currentAudio.removeEventListener('ended', handleAudioEnded);
+      };
+    }
+  }, [currentAudio, isPlayingAll, playingIndex]);
+
+  // Modified togglePlayAll to work with the new approach
   const togglePlayAll = () => {
     console.log('Toggle play all called, current state:', isPlayingAll);
     
@@ -695,81 +648,43 @@ export default function Home() {
       console.log('Currently paused, resuming');
       setIsPlayingAll(true);
       
-      // Safety check - ensure the popup is visible
-      if (!showPlayAllPopup) {
-        console.log('Play all popup is not showing, fixing this issue');
-        setShowPlayAllPopup(true);
-      }
-      
-      if (currentPlayingLine !== null && currentAudio) {
-        console.log('Resuming from current line:', currentPlayingLine);
+      if (playingIndex !== null) {
+        console.log('Resuming current line:', playingIndex);
         
-        // Resume current audio if available and it's loaded
-        if (currentAudio.readyState >= 2) {
-          console.log('Audio is loaded, playing immediately');
+        // Resume current audio if it exists
+        if (currentAudio) {
+          console.log('Resuming current audio');
           currentAudio.play()
-            .then(() => console.log('Resume successful'))
             .catch(err => {
               console.error('Error resuming audio:', err);
-              // If error resuming, try playing next line
-              console.log('Moving to next line due to error');
-              setTimeout(() => playNextLine(currentPlayingLine + 1), 500);
             });
-        } else {
-          console.log('Audio not loaded yet, setting up listener');
-          // If audio isn't loaded yet, set up a canplaythrough listener
-          // Remove any existing listeners first to avoid duplicates
-          currentAudio.oncanplaythrough = null;
-          
-          currentAudio.oncanplaythrough = () => {
-            console.log('Audio can play through event fired during resume');
-            // Only play if we're still in play all mode
-            if (isPlayingAll && showPlayAllPopup) {
-              console.log('Still in play all mode, starting playback');
-              currentAudio.play()
-                .then(() => console.log('Delayed resume successful'))
-                .catch(err => {
-                  console.error('Error playing audio after load:', err);
-                  // Move to next line if there's an error
-                  console.log('Moving to next line due to error after load');
-                  setTimeout(() => playNextLine(currentPlayingLine + 1), 500);
-                });
-            } else {
-              console.log('No longer in play all mode, not resuming');
-            }
-          };
-          
-          // Make sure audio is loading
-          if (currentAudio.paused) {
-            console.log('Audio is paused, loading again');
-            currentAudio.load();
-          }
         }
+      } else if (currentPlayingLine !== null) {
+        // If we have a currentPlayingLine but no playingIndex, restart that line
+        console.log('Restarting from line:', currentPlayingLine);
+        handlePlayLine(currentPlayingLine);
       } else {
-        // If no current line or audio, start from beginning or current line
-        const startLineIndex = currentPlayingLine !== null ? currentPlayingLine : 0;
-        console.log('No current audio or line, starting from:', startLineIndex);
-        
-        // Use setTimeout to allow state updates to propagate
-        setTimeout(() => {
-          if (isPlayingAll && showPlayAllPopup) {
-            console.log('Starting playback from line index:', startLineIndex);
-            playNextLine(startLineIndex);
-          } else {
-            console.log('State changed before timeout, not starting playback');
-          }
-        }, 100);
+        // Otherwise, start from the beginning
+        console.log('Starting from beginning');
+        handlePlayLine(0);
       }
     }
   };
 
-  // Function to close the play all popup
-  const closePlayAllPopup = () => {
-    console.log('Closing play all popup');
-    // First stop all playback
-    stopPlayAll();
-    // Then close the popup
-    setShowPlayAllPopup(false);
+  // Simplified stopPlayAll function
+  const stopPlayAll = () => {
+    console.log('Stopping play all');
+    setIsPlayingAll(false);
+    setCurrentPlayingLine(null);
+    
+    // Stop any playing audio
+    stopAllAudio();
+    
+    // Clean up any observers
+    if (window.currentObserver) {
+      window.currentObserver.disconnect();
+      window.currentObserver = null;
+    }
   };
 
   // Clean up audio elements when component unmounts
@@ -1045,6 +960,42 @@ export default function Home() {
     setAudioCache(new Map());
   };
 
+  // Function to handle Play All button click with user interaction
+  const handlePlayAllClick = () => {
+    console.log('Play All button clicked with user interaction');
+    
+    // This function is called with direct user interaction,
+    // so we can start audio playback right away
+    playEntireScript();
+    
+    // Unlock audio playback on iOS/Safari
+    const unlockAudio = () => {
+      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const buffer = audioContext.createBuffer(1, 1, 22050);
+      const source = audioContext.createBufferSource();
+      source.buffer = buffer;
+      source.connect(audioContext.destination);
+      source.start(0);
+      
+      // Clean up
+      document.removeEventListener('touchstart', unlockAudio);
+      document.removeEventListener('click', unlockAudio);
+    };
+    
+    // Add event listeners for iOS/Safari
+    document.addEventListener('touchstart', unlockAudio, { once: true });
+    document.addEventListener('click', unlockAudio, { once: true });
+  };
+
+  // Monitor playingIndex changes for Play All mode
+  useEffect(() => {
+    if (isPlayingAll && playingIndex !== null) {
+      // Update the currentPlayingLine to match playingIndex
+      setCurrentPlayingLine(playingIndex);
+      console.log('Updated currentPlayingLine to match playingIndex:', playingIndex);
+    }
+  }, [playingIndex, isPlayingAll]);
+
   return (
     <main className="flex min-h-screen flex-col">
       <div className="flex flex-col flex-grow bg-zinc-100 dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100">
@@ -1139,12 +1090,12 @@ export default function Home() {
                 <button 
                   onClick={() => {
                     console.log('Play All button clicked');
-                    playEntireScript();
+                    handlePlayAllClick();
                   }} 
                   disabled={script.length === 0 || isGenerating}
                   className="inline-flex items-center px-3 py-1.5 bg-green-600 text-white text-sm rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 transition-colors disabled:opacity-50"
                 >
-                  {isGenerating ? "Processing..." : "Play All"}
+                  {isGenerating ? "Processing..." : isPlayingAll ? "Pause All" : "Play All"}
                 </button>
                 <button 
                   onClick={exportAudio} 
@@ -1189,19 +1140,6 @@ export default function Home() {
           </div>
         </div>
       </div>
-      
-      {/* Play All Popup */}
-      <PlayAllPopup 
-        isOpen={showPlayAllPopup}
-        onClose={closePlayAllPopup}
-        currentLineIndex={currentPlayingLine}
-        totalLines={script.length}
-        currentCharacter={currentPlayingLine !== null ? script[currentPlayingLine]?.characterName || '' : ''}
-        currentText={currentPlayingLine !== null ? script[currentPlayingLine]?.text || '' : ''}
-        isPlaying={isPlayingAll}
-        onPlayPause={togglePlayAll}
-        onStop={closePlayAllPopup}
-      />
       
       {/* Autopilot Popup */}
       {showAutopilotPopup && (
