@@ -10,6 +10,7 @@ echo The application will open in your default browser shortly.
 echo To stop the server, press Ctrl+C in this window.
 echo.
 
+start http://localhost:3000
 call npm run dev
 if %ERRORLEVEL% NEQ 0 (
     echo Error starting development server.

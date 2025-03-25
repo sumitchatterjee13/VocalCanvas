@@ -31,6 +31,12 @@ A modern web application that allows storytellers, voice-over artists, and conte
    ```
 
 2. Install dependencies:
+   
+   **Using installation scripts:**
+   - Windows: Run `install.bat` by double-clicking or from command prompt
+   - macOS/Linux: Run `./install.sh` in terminal (you may need to set permissions with `chmod +x install.sh`)
+   
+   **Manually:**
    ```bash
    npm install
    # or
@@ -48,14 +54,22 @@ A modern web application that allows storytellers, voice-over artists, and conte
      FORMATTER_MODEL=gpt-4o-mini
      ```
 
-4. Start the development server:
+4. Start the application:
+
+   **Using run scripts:**
+   - Windows: Run `run.bat` by double-clicking or from command prompt
+   - macOS/Linux: Run `./run.sh` in terminal (you may need to set permissions with `chmod +x run.sh`)
+   
+   The application will automatically open in your default web browser.
+   
+   **Manually:**
    ```bash
    npm run dev
    # or
    yarn dev
    ```
 
-5. Open [http://localhost:3000](http://localhost:3000) in your browser
+5. If starting manually, open [http://localhost:3000](http://localhost:3000) in your browser
 
 ## How to Use
 
