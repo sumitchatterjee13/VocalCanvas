@@ -170,7 +170,7 @@ DETECTIVE: The roses, you say? The murder weapon was a pruning shear.
 
 ## License
 
-[MIT License](LICENSE)
+[APACHE-2.0 License](LICENSE)
 
 ## Acknowledgments
 
