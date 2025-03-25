@@ -1,0 +1,38 @@
+{
+  "name": "story-app",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@dnd-kit/utilities": "^3.2.2",
+    "@heroicons/react": "^2.2.0",
+    "@tailwindcss/postcss": "^4.0.15",
+    "@types/jszip": "^3.4.0",
+    "idb": "^8.0.2",
+    "jszip": "^3.10.1",
+    "next": "15.2.3",
+    "openai": "^4.89.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "autoprefixer": "^10.4.18",
+    "eslint": "^9",
+    "eslint-config-next": "15.2.3",
+    "postcss": "^8.4.35",
+    "tailwindcss": "^4.0.15",
+    "typescript": "^5"
+  }
+}
