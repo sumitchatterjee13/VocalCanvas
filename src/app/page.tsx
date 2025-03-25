@@ -410,6 +410,7 @@ export default function Home() {
     let allGenerated = true;
     let missingLines = [];
     
+    console.log('Checking if all audio is generated...');
     for (let i = 0; i < script.length; i++) {
       const line = script[i];
       const cacheKey = `${line.characterName}_${line.text}_${line.instructions || ''}`;
@@ -421,7 +422,7 @@ export default function Home() {
     }
     
     if (!allGenerated) {
-      console.log('Not all audio is generated, showing alert');
+      console.log('Not all audio is generated, showing alert. Missing lines:', missingLines);
       const lineStr = missingLines.length > 3 
         ? `${missingLines.slice(0, 3).join(', ')} and others` 
         : missingLines.join(', ');
@@ -429,27 +430,48 @@ export default function Home() {
       return;
     }
     
-    console.log('Stopping any currently playing audio');
+    console.log('All audio is generated, proceeding with playback');
+    
     // Stop any currently playing audio
+    console.log('Stopping any currently playing audio');
     stopAllAudio();
     
-    console.log('Setting up play all state');
-    // First set the state
-    setShowPlayAllPopup(true);
-    setIsPlayingAll(true);
-    setCurrentPlayingLine(0);
-    
     try {
-      console.log('Starting playback with delay to ensure state is updated');
-      // Start the playback loop with a delay to ensure state is updated
+      // Ensure clean state
+      console.log('Resetting playback state');
+      setCurrentPlayingLine(null);
+      setCurrentAudio(null);
+      setAudioElements(new Map());
+      
+      // First set up the UI state
+      console.log('Setting up play all state - showing popup');
+      setShowPlayAllPopup(true);
+      
+      // Use a two-phase approach with callbacks to ensure state is updated
+      // First phase: show the popup
+      console.log('First phase: waiting for popup to be visible');
       setTimeout(() => {
-        console.log('State should be updated now, starting playback');
-        if (isPlayingAll) {
-          playNextLine(0);
-        } else {
-          console.log('State changed before timeout, not starting playback');
-        }
-      }, 300); // Delay to ensure state is updated
+        // Second phase: set playing state and start playback
+        console.log('Second phase: setting playing state');
+        setIsPlayingAll(true);
+        setCurrentPlayingLine(0);
+        
+        // Final phase: initiate playback
+        setTimeout(() => {
+          console.log('Final phase: initiating playback, state check:');
+          console.log('- isPlayingAll:', isPlayingAll);
+          console.log('- showPlayAllPopup:', showPlayAllPopup);
+          console.log('- currentPlayingLine:', currentPlayingLine);
+          
+          if (showPlayAllPopup) {
+            // Even if the state hasn't propagated yet, we can force playback
+            console.log('Starting playback sequence');
+            playNextLine(0);
+          } else {
+            console.error('Popup disappeared before playback could start');
+          }
+        }, 300); // Short delay for playing
+      }, 200); // Short delay for state update
     } catch (error) {
       console.error('Error playing entire script:', error);
       alert('Failed to play the entire script. Please try again.');
@@ -476,8 +498,19 @@ export default function Home() {
     
     setCurrentPlayingLine(lineIndex);
     
+    // Make sure we have valid line data
+    if (!script[lineIndex]) {
+      console.error('Invalid line index:', lineIndex, 'script length:', script.length);
+      stopPlayAll();
+      return;
+    }
+    
     const line = script[lineIndex];
+    console.log('Line data:', line.characterName, line.text.substring(0, 30) + '...');
     const cacheKey = `${line.characterName}_${line.text}_${line.instructions || ''}`;
+    
+    console.log('Checking cache for key:', cacheKey.substring(0, 50) + '...');
+    console.log('Cache has key:', audioCache.has(cacheKey));
     
     if (!audioCache.has(cacheKey)) {
       console.warn(`No audio found for line ${lineIndex}, skipping`);
@@ -494,6 +527,8 @@ export default function Home() {
       return;
     }
     
+    console.log('Audio URL found:', audioUrl.substring(0, 50) + '...');
+    
     try {
       // Stop any currently playing audio
       if (currentAudio) {
@@ -508,9 +543,9 @@ export default function Home() {
       
       console.log('Creating new audio for line:', lineIndex);
       // Create a new audio element for this line
-      const audio = new Audio(audioUrl);
+      const audio = new Audio();
       
-      // Store the audio element
+      // Store the audio element immediately to ensure it persists
       setAudioElements(prev => {
         const newMap = new Map(prev);
         // Clear any previous audio elements to avoid memory leaks
@@ -525,39 +560,86 @@ export default function Home() {
       
       setCurrentAudio(audio);
       
-      // Set up event listeners before loading
+      // Set event listeners before setting source
       audio.oncanplaythrough = () => {
-        console.log('Audio canplaythrough event fired, isPlayingAll:', isPlayingAll);
-        // Only play if we're still in play all mode
+        console.log('Audio canplaythrough event fired for line:', lineIndex);
+        
+        // Double check state to make sure we're still in play all mode
         if (isPlayingAll && showPlayAllPopup) {
           console.log('Starting playback for line:', lineIndex);
-          audio.play()
-            .then(() => console.log('Playback started successfully'))
-            .catch(err => {
-              console.error('Error playing audio:', err);
-              // Move to next line if there's an error
-              setTimeout(() => playNextLine(lineIndex + 1), 500);
-            });
+          
+          // Try to play and handle any errors
+          try {
+            const playPromise = audio.play();
+            if (playPromise !== undefined) {
+              playPromise
+                .then(() => console.log('Playback started successfully'))
+                .catch(err => {
+                  console.error('Error playing audio:', err);
+                  // Try again with user interaction trick
+                  document.addEventListener('click', function playOnClick() {
+                    audio.play();
+                    document.removeEventListener('click', playOnClick);
+                  }, { once: true });
+                  // Move to next line if there's an error
+                  setTimeout(() => playNextLine(lineIndex + 1), 500);
+                });
+            }
+          } catch (e) {
+            console.error('Exception playing audio:', e);
+            // Move to next line if there's an error
+            setTimeout(() => playNextLine(lineIndex + 1), 500);
+          }
         } else {
           console.log('No longer in play all mode, not starting playback');
         }
       };
       
       audio.onended = () => {
-        console.log('Audio ended, moving to next line');
+        console.log('Audio ended for line:', lineIndex);
         // Small delay before playing next line
         setTimeout(() => playNextLine(lineIndex + 1), 500);
       };
       
+      audio.onloadeddata = () => {
+        console.log('Audio loaded data event for line:', lineIndex);
+      };
+      
       audio.onerror = (e) => {
-        console.error('Error with audio playback:', e);
+        console.error('Error with audio playback for line:', lineIndex, e);
+        console.error('Audio error code:', audio.error ? audio.error.code : 'unknown');
         // Move to next line if there's an error
         setTimeout(() => playNextLine(lineIndex + 1), 500);
       };
       
-      // Start loading the audio
+      // Set the source
+      console.log('Setting audio source for line:', lineIndex);
+      audio.src = audioUrl;
+      audio.preload = 'auto';
+      
+      // Explicitly attempt to start loading
       console.log('Loading audio for line:', lineIndex);
       audio.load();
+      
+      // Force play after a short delay in case canplaythrough doesn't fire
+      setTimeout(() => {
+        if (audio.paused && isPlayingAll && showPlayAllPopup) {
+          console.log('Force playing audio after timeout for line:', lineIndex);
+          try {
+            audio.play()
+              .then(() => console.log('Forced play successful for line:', lineIndex))
+              .catch(err => {
+                console.error('Error during forced play for line:', lineIndex, err);
+                // Move to next line if there's an error
+                setTimeout(() => playNextLine(lineIndex + 1), 300);
+              });
+          } catch (e) {
+            console.error('Exception during forced play:', e);
+            setTimeout(() => playNextLine(lineIndex + 1), 300);
+          }
+        }
+      }, 1000); // Shorter timeout - 1 second
+      
     } catch (error) {
       console.error('Error setting up audio:', error);
       // Try to continue with next line
@@ -613,6 +695,12 @@ export default function Home() {
       console.log('Currently paused, resuming');
       setIsPlayingAll(true);
       
+      // Safety check - ensure the popup is visible
+      if (!showPlayAllPopup) {
+        console.log('Play all popup is not showing, fixing this issue');
+        setShowPlayAllPopup(true);
+      }
+      
       if (currentPlayingLine !== null && currentAudio) {
         console.log('Resuming from current line:', currentPlayingLine);
         
@@ -661,7 +749,16 @@ export default function Home() {
         // If no current line or audio, start from beginning or current line
         const startLineIndex = currentPlayingLine !== null ? currentPlayingLine : 0;
         console.log('No current audio or line, starting from:', startLineIndex);
-        playNextLine(startLineIndex);
+        
+        // Use setTimeout to allow state updates to propagate
+        setTimeout(() => {
+          if (isPlayingAll && showPlayAllPopup) {
+            console.log('Starting playback from line index:', startLineIndex);
+            playNextLine(startLineIndex);
+          } else {
+            console.log('State changed before timeout, not starting playback');
+          }
+        }, 100);
       }
     }
   };

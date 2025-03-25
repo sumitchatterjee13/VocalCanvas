@@ -63,8 +63,22 @@ export default function PlayAllPopup({
   // Handle play/pause button click
   const handlePlayPause = () => {
     console.log('PlayAllPopup play/pause button clicked, current state:', isPlaying);
-    onPlayPause();
+    
+    // Add a small delay to ensure state update is processed
+    setTimeout(() => {
+      console.log('PlayAllPopup calling onPlayPause callback');
+      onPlayPause();
+    }, 100);
   };
+  
+  // Add visible debug info in development mode
+  const debugInfo = process.env.NODE_ENV === 'development' && (
+    <div className="mt-2 p-2 bg-gray-100 dark:bg-zinc-700 rounded text-xs">
+      <div>Debug: {isPlaying ? 'Playing' : 'Paused'}</div>
+      <div>Current line: {currentLineIndex !== null ? currentLineIndex + 1 : 'none'}</div>
+      <div>Total lines: {totalLines}</div>
+    </div>
+  );
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
@@ -114,8 +128,15 @@ export default function PlayAllPopup({
         {/* Controls */}
         <div className="flex justify-center space-x-4">
           <button
-            onClick={handlePlayPause}
-            className="rounded-full bg-blue-600 p-3 text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            onClick={(e) => {
+              e.stopPropagation(); // Prevent event bubbling
+              handlePlayPause();
+            }}
+            className={`rounded-full p-3 text-white focus:outline-none focus:ring-2 ${
+              isPlaying 
+                ? 'bg-blue-600 hover:bg-blue-700 focus:ring-blue-500' 
+                : 'bg-green-600 hover:bg-green-700 focus:ring-green-500'
+            }`}
             aria-label={isPlaying ? "Pause" : "Play"}
           >
             {isPlaying ? (
@@ -126,13 +147,19 @@ export default function PlayAllPopup({
           </button>
           
           <button
-            onClick={onStop}
+            onClick={(e) => {
+              e.stopPropagation(); // Prevent event bubbling
+              onStop();
+            }}
             className="rounded-full bg-red-600 p-3 text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500"
             aria-label="Stop"
           >
             <StopIcon className="h-6 w-6" />
           </button>
         </div>
+        
+        {/* Debug info in development mode */}
+        {debugInfo}
       </div>
     </div>
   );

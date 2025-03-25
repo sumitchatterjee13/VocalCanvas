@@ -5,17 +5,59 @@
  */
 export function playAudioFromUrl(url: string): Promise<void> {
   return new Promise((resolve, reject) => {
-    const audio = new Audio(url);
+    console.log('Creating audio element to play URL:', url.substring(0, 50) + '...');
+    const audio = new Audio();
     
+    // Set up event listeners first
     audio.addEventListener('ended', () => {
+      console.log('Audio playback completed successfully');
       resolve();
     });
     
     audio.addEventListener('error', (error) => {
+      console.error('Error during audio playback:', error);
+      console.error('Audio error code:', audio.error ? audio.error.code : 'unknown');
       reject(error);
     });
     
-    audio.play().catch(reject);
+    audio.addEventListener('canplaythrough', () => {
+      console.log('Audio can play through, starting playback');
+      try {
+        const playPromise = audio.play();
+        if (playPromise !== undefined) {
+          playPromise.catch(err => {
+            console.error('Error playing audio:', err);
+            reject(err);
+          });
+        }
+      } catch (e) {
+        console.error('Exception playing audio:', e);
+        reject(e);
+      }
+    });
+    
+    // Set the audio properties
+    audio.preload = 'auto';
+    audio.src = url;
+    
+    // Load the audio
+    console.log('Loading audio from URL');
+    audio.load();
+    
+    // Set a backup timer in case canplaythrough doesn't fire
+    setTimeout(() => {
+      if (audio.paused) {
+        console.log('Backup timer: attempting to play audio');
+        try {
+          audio.play().catch(err => {
+            console.error('Error during backup play:', err);
+            // Don't reject here, as it might play successfully later
+          });
+        } catch (e) {
+          console.error('Exception during backup play:', e);
+        }
+      }
+    }, 1000);
   });
 }
 
